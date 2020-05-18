@@ -7,6 +7,7 @@ import org.nulluncertainty.expression.ComposableBooleanExp
 
 import scala.annotation.{StaticAnnotation, compileTimeOnly}
 import scala.language.experimental.macros
+import scala.reflect.api.Trees
 import scala.reflect.macros.whitebox
 
 object NumberConstraints {
@@ -72,17 +73,31 @@ object EnabledAssertionsImpl {
     import c.universe._
 
     case class Path(context: ValDef, segments: Seq[PathSegment] = Nil) {
-      def contextName: Ident = context.tpt.asInstanceOf[Ident]
-      def addProperty(name: String): Path = copy(segments = segments :+ PropertySegment(name))
-      def addIndex(name: String): Path = copy(segments = segments :+ IndexSegment(name))
+      def contextName: Ident =
+        context.tpt.asInstanceOf[Ident]
+      def addProperty(name: String): Path =
+        copy(segments = segments :+ PropertySegment(name))
+      def addIndex(name: String): Path =
+        copy(segments = segments :+ IndexSegment(name))
       def asFunction: c.universe.Tree =
-        Function(List(context), segments.foldLeft[Tree](Ident(TermName("input"))) {
-          (tree, segment) => segment.asSelect(tree)})
+        Function(
+          List(context),
+          segments
+            .foldLeft[Tree](Ident(context.name)) { // TODO "input" was between parenthesis
+              (tree, segment) => segment.asSelect(tree)
+            })
       def asSelect: c.universe.Tree =
-        segments.foldLeft[Tree](Ident(TermName("input"))) {
-          (tree, segment) => segment.asSelect(tree)}
-      def asString: Tree = segments.map(_.asString).reduce{ (l, r) => q""" $l+"."+$r """}
-      def nextIndexName: String = s"index${segments.count(_.isInstanceOf[IndexSegment])}"
+        segments
+          .foldLeft[Tree](Ident(context.name)) { //TODO see what term name is here, otherwise parametrize input
+            (tree, segment) => segment.asSelect(tree)
+          }
+      def asString: Tree =
+        segments
+          .map(_.asString)
+          .reduceOption { (l, r) => q""" $l+"."+$r """}
+          .getOrElse(q"""${context.name.decodedName.toString}""")
+      def nextIndexName: String =
+        s"index${segments.count(_.isInstanceOf[IndexSegment])}"
     }
     trait PathSegment {
       def asSelect(tree: Tree): c.universe.Tree
@@ -100,205 +115,205 @@ object EnabledAssertionsImpl {
       override def toString: String = indexName
     }
 
-    object StringAssertionBuilder extends((String,Path,List[Tree]) => Tree) {
-      def apply(constraint: String, path: Path, constraintsArgs: List[Tree] = Nil): c.universe.Tree = constraint match {
+    object StringAssertionBuilder extends((String,Path,List[Tree],Boolean) => Tree) {
+      def apply(constraint: String, path: Path, constraintsArgs: List[Tree], isOptional: Boolean): c.universe.Tree = constraint match {
         case "EqualsTo" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .isEqualTo(${constraintsArgs.head})
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "EqualsTo", ${path.asSelect} + " is not equal to " + ${constraintsArgs.head})})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "EqualsTo", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " is not equal to " + ${constraintsArgs.head})})
           """
         case "EqualsToIgnoringCase" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .isEqualToIgnoringCase(${constraintsArgs.head})
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "EqualsToIgnoringCase", ${path.asSelect} + " is not equal to " + ${constraintsArgs.head})})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "EqualsToIgnoringCase", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " is not equal to " + ${constraintsArgs.head})})
           """
         case "StartsWith" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .startsWith(${constraintsArgs.head})
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "StartsWith", ${path.asSelect} + " does not start with prefix " + ${constraintsArgs.head})})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "StartsWith", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " does not start with prefix " + ${constraintsArgs.head})})
           """
         case "StartsWithIgnoringCase" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .startsWithIgnoringCase(${constraintsArgs.head})
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "StartsWithIgnoringCase", ${path.asSelect} + " does not start with prefix " + ${constraintsArgs.head})})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "StartsWithIgnoringCase", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " does not start with prefix " + ${constraintsArgs.head})})
           """
         case "EndsWith" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .endsWith(${constraintsArgs.head})
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "EndsWith", ${path.asSelect} + " does not end with suffix " + ${constraintsArgs.head})})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "EndsWith", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " does not end with suffix " + ${constraintsArgs.head})})
           """
         case "EndsWithIgnoringCase" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .endsWithIgnoringCase(${constraintsArgs.head})
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "EndsWithIgnoringCase", ${path.asSelect} + " does not end with suffix " + ${constraintsArgs.head})})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "EndsWithIgnoringCase", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " does not end with suffix " + ${constraintsArgs.head})})
           """
         case "Contains" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .contains(${constraintsArgs.head})
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "Contains", ${path.asSelect} + " does not contain " + ${constraintsArgs.head})})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "Contains", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " does not contain " + ${constraintsArgs.head})})
           """
         case "ContainsIgnoringCase" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .containsIgnoringCase(${constraintsArgs.head})
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "ContainsIgnoringCase", ${path.asSelect} + " does not contain " + ${constraintsArgs.head})})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "ContainsIgnoringCase", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " does not contain " + ${constraintsArgs.head})})
           """
         case "Matches" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .matches(${constraintsArgs.head})
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "Matches", ${path.asSelect} + " does not match " + ${constraintsArgs.head})})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "Matches", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " does not match " + ${constraintsArgs.head})})
           """
         case "Email" =>
           q"""
              org.nulluncertainty.assertion.AssertionBuilder
               .assertThat(${path.asFunction})
               .isEmail
-              .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "Email", ${path.asSelect} + " is not a valid email")})
+              .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "Email", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " is not a valid email")})
             """
         case "Uri" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .isUri
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "Uri", ${path.asSelect} + " is not an URI")})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "Uri", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " is not a valid URI")})
           """
         case "Alphanumeric" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .isAlphanumeric
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "Alphanumeric", ${path.asSelect} + " is not alphanumeric")})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "Alphanumeric", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " is not alphanumeric")})
           """
         case "Alphabetic" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .isAlphabetic
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "Alphabetic", ${path.asSelect} + " is not alphabetic")})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "Alphabetic", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " is not alphabetic")})
           """
         case "Number" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .isNumber
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "Number", ${path.asSelect} + " is not a number")})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "Number", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " is not a number")})
           """
         case "LengthIs" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .isSameLengthAs(${constraintsArgs.head})
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "LengthIs", ${path.asSelect} + " length is not" + ${constraintsArgs.head})})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "LengthIs", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " length is not " + ${constraintsArgs.head})})
           """
         case "LongerThan" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .isLongerThan(${constraintsArgs.head})
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "LongerThan", ${path.asSelect} + " length is not longer than" + ${constraintsArgs.head})})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "LongerThan", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " length is not longer than " + ${constraintsArgs.head})})
           """
         case "ShorterThan" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .isShorterThan(${constraintsArgs.head})
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "ShorterThan", ${path.asSelect} + " length is not shorter than" + ${constraintsArgs.head})})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "ShorterThan", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " length is not shorter than " + ${constraintsArgs.head})})
           """
         case "LongerThanOrEqualTo" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .isLongerThanOrEqualTo(${constraintsArgs.head})
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "LongerThanOrEqualTo", ${path.asSelect} + " length is not longer than or equal to" + ${constraintsArgs.head})})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "LongerThanOrEqualTo", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " length is not longer than or equal to " + ${constraintsArgs.head})})
           """
         case "ShorterThanOrEqualTo" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .isShorterThanOrEqualTo(${constraintsArgs.head})
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "ShorterThanOrEqualTo", ${path.asSelect} + " length is not shorter than or equal to" + ${constraintsArgs.head})})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "ShorterThanOrEqualTo", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " length is not shorter than or equal to " + ${constraintsArgs.head})})
           """
         case "NotBlank" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .isNotBlank
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "NotBlank", ${path.asSelect} + " must not be blank")})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "NotBlank", ${path.asString} + " must not be blank")})
           """
       }
     }
-    object NumberAssertionBuilder extends((String,Path,List[Tree]) => Tree) {
-      def apply(constraint: String, path: Path, constraintArgs: List[Tree] = Nil): c.universe.Tree = constraint match {
+    object NumberAssertionBuilder extends((String,Path,List[Tree],Boolean) => Tree) {
+      def apply(constraint: String, path: Path, constraintArgs: List[Tree], isOptional: Boolean): c.universe.Tree = constraint match {
         case "GreaterThan" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .isGreaterThan(${constraintArgs.head})
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "GreaterThan", ${path.asSelect} + " is not greater than " + ${constraintArgs.head})})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "GreaterThan", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " is not greater than " + ${constraintArgs.head})})
           """
         case "GreaterThanOrEqualTo" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .isGreaterThanOrEqualTo(${constraintArgs.head})
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "GreaterThanOrEqualTo", ${path.asSelect} + " is not greater than or equal to " + ${constraintArgs.head})})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "GreaterThanOrEqualTo", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " is not greater than or equal to " + ${constraintArgs.head})})
           """
         case "LessThan" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .isLessThan(${constraintArgs.head})
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "LessThan", ${path.asSelect} + " is not less than " + ${constraintArgs.head})})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "LessThan", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " is not less than " + ${constraintArgs.head})})
           """
         case "LessThanOrEqualTo" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .isLessThanOrEqualTo(${constraintArgs.head})
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "LessThanOrEqualTo", ${path.asSelect} + " is not less than or equal to " + ${constraintArgs.head})})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "LessThanOrEqualTo", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " is not less than or equal to " + ${constraintArgs.head})})
           """
         case "EqualsTo" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .isEqualTo(${constraintArgs.head})
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "EqualsTo", ${path.asSelect} + " is not equal to " + ${constraintArgs.head})})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "EqualsTo", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " is not equal to " + ${constraintArgs.head})})
            """
         case "InclusiveRange" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .isInInclusiveRange(${constraintArgs.head}, ${constraintArgs.tail.head})
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "InclusiveRange", ${path.asSelect} + " is not in inclusive range " + ${constraintArgs.head}+" to "+${constraintArgs.tail.head} )})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "InclusiveRange", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " is not within the inclusive range of " + ${constraintArgs.head}+" to "+${constraintArgs.tail.head} )})
           """
         case "ExclusiveRange" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .isInExclusiveRange(${constraintArgs.head}, ${constraintArgs.tail.head})
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "ExclusiveRange", ${path.asSelect} + " is not in exclusive range " + ${constraintArgs.head}+" to "+${constraintArgs.tail.head} )})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "ExclusiveRange", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " is not within the exclusive range of " + ${constraintArgs.head}+" to "+${constraintArgs.tail.head} )})
           """
       }
     }
-    case object IterableAssertionBuilder {
-      def apply(constraint: String, path: Path, constraintArgs: List[Tree] = Nil): c.universe.Tree = constraint match {
+    case object IterableAssertionBuilder extends((String,Path,List[Tree],Boolean) => Tree) {
+      def apply(constraint: String, path: Path, constraintArgs: List[Tree] = Nil, isOptional: Boolean = false): c.universe.Tree = constraint match {
         case "NonEmpty" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
@@ -387,30 +402,42 @@ object EnabledAssertionsImpl {
       }
     }
     case object ObjectAssertionBuilder extends((MethodSymbol,Path) => Tree) {
+      val assertionBuilder: ((String, Path, List[Tree], Boolean) => Tree) => Path => Boolean => PartialFunction[Tree,Tree] =
+        builder => propertyPath => isOptional => {
+          case constraint@Select(_,_) =>
+            builder(constraint.toString().split('.').last, propertyPath, Nil, isOptional)
+          case Apply(Select(constraint,_), constraintArgs) =>
+            builder(constraint.toString().split('.').last,
+              propertyPath,
+              constraintArgs.collect {
+                case Apply(_,literal::_) => literal
+                case other => other
+              },
+              isOptional)
+          case Ident(constraint) =>
+            builder(constraint.toString.split('.').last, propertyPath, Nil, isOptional)
+          }
+      val mapOverApplying: List[Tree] => PartialFunction[Tree,Tree] => Tree = constraints => assertionBuilder =>
+        constraints.map(assertionBuilder).reduce((left, right) => q"""$left.ifTrue($right)""")
+
       override def apply(constructor: MethodSymbol, path: Path): c.universe.Tree = {
         constructor.paramLists.flatten.map { param =>
           val propertyPath = path.addProperty(param.asTerm.name.decodedName.toString)
           param.annotations.map(_.tree).map {
-            case Apply(Select(Tuple2(New(constrainedTypeName), _)), constraints) =>
-              constrainedTypeName.symbol.asClass.name.toString match {
+            case Apply(select, constraints) =>
+              select.toString().split('.').last match {
 
-                case "ConstrainedNumber" =>
-                  constraints.map {
-                    case Select(_, TermName(constraint)) =>
-                      NumberAssertionBuilder(constraint, propertyPath)
-                    case Apply(Select(Tuple2(Select(_, TermName(constraint)), _)), constraintArgs) =>
-                      NumberAssertionBuilder(constraint, propertyPath,
-                        constraintArgs.collect { case Apply(_, (literal@Literal(_)) :: _) => literal })
-                  }.reduce((left, right) => q"""$left.and($right)""")
+                case "ConstrainedNumber" if Seq("BigDecimal","Int","Long","Double","Float").contains(param.asTerm.typeSignature.toString) =>
+                  mapOverApplying(constraints)(assertionBuilder(NumberAssertionBuilder)(propertyPath)(false))
 
-                case "ConstrainedString" =>
-                  constraints.map {
-                    case Select(_, TermName(constraint)) =>
-                      StringAssertionBuilder(constraint, propertyPath)
-                    case Apply(Select(Tuple2(Select(_, TermName(constraint)), _)), constraintArgs) =>
-                      StringAssertionBuilder(constraint, propertyPath,
-                        constraintArgs.collect { case Apply(_, (literal@Literal(_)) :: _) => literal })
-                  }.reduce((left, right) => q"""$left.and($right)""")
+                case "ConstrainedNumber" if param.asTerm.typeSignature.typeArgs.nonEmpty && Seq("BigDecimal","Int","Long","Double","Float").contains(param.asTerm.typeSignature.typeArgs.head.toString) =>
+                  mapOverApplying(constraints)(assertionBuilder(NumberAssertionBuilder)(propertyPath)(param.typeSignature.toString.startsWith("Option[")))
+
+                case "ConstrainedString" if "String" == param.asTerm.typeSignature.toString =>
+                  mapOverApplying(constraints)(assertionBuilder(StringAssertionBuilder)(propertyPath)(false))
+
+                case "ConstrainedString" if param.asTerm.typeSignature.typeArgs.nonEmpty && "String" == param.asTerm.typeSignature.typeArgs.head.toString =>
+                  mapOverApplying(constraints)(assertionBuilder(StringAssertionBuilder)(propertyPath)(param.typeSignature.toString.startsWith("Option[")))
 
                 case "ConstrainedType" =>
                   ObjectAssertionBuilder(
@@ -422,20 +449,68 @@ object EnabledAssertionsImpl {
                     param.typeSignature.typeArgs.head.typeSymbol.name.toString,
                     propertyPath,
                     constraints.map {
-                      case Select(_, TermName(constraint)) =>
-                        IterableAssertionBuilder(constraint, propertyPath, Nil)
-                      case Apply(Select(Tuple2(Select(_, TermName(constraint)), _)), constraintArgs) =>
-                        IterableAssertionBuilder(constraint, propertyPath, constraintArgs)
-                      case Apply(TypeApply(Ident(TermName(constraint)), _), mappingFunc::_) =>
-                        IterableAssertionBuilder(constraint, propertyPath, List(mappingFunc))
-                      case Apply(TypeApply(Select(Select(arg1,TermName(constraint)),arg2),arg3),mappingFunc::arg4b) =>
-                        IterableAssertionBuilder(constraint, propertyPath, List(mappingFunc))
+                      case Apply(TypeApply(constraint,_), constraintArgs) =>
+                        IterableAssertionBuilder(constraint.toString().split('.').last, propertyPath, constraintArgs)
+                      case Apply(Select(constraint,_), constraintArgs) =>
+                        IterableAssertionBuilder(constraint.toString().split('.').last, propertyPath, constraintArgs)
+                      case select@Select(_,_) =>
+                        IterableAssertionBuilder(select.toString().split('.').last, propertyPath, Nil)
+                      case Ident(constraint) =>
+                        IterableAssertionBuilder(constraint.toString.split('.').last, propertyPath, Nil)
                     }.reduce((left, right) => q"""$left.ifTrue($right)"""))
-
-                case _ => q"""org.nulluncertainty.expression.SuccessfulAssertionExp()"""
               }
           }.reduceOption((left, right) => q"""$left.and($right)""")
             .getOrElse(q"""org.nulluncertainty.expression.SuccessfulAssertionExp()""")
+        }.reduceOption((left, right) => q"""$left.and($right)""")
+          .getOrElse(q"""org.nulluncertainty.expression.SuccessfulAssertionExp()""")
+      }
+    }
+    object InstantiationAssertionBuilder extends((String,Seq[ValDef]) => Tree) {
+
+      override def apply(context: String, fields: Seq[ValDef]): c.universe.Tree = {
+        val assertionContextAtInstantiation =
+          ValDef(Modifiers(), TermName("input"), Ident(TypeName(context)), EmptyTree)
+        val path = Path(assertionContextAtInstantiation)
+
+        val assertionBuilder: ((String, Path, List[Tree], Boolean) => Tree) => String => Boolean => PartialFunction[Tree,Tree] =
+          builder => property => isOptional => {
+            case Apply(constraint, constraintArgs) =>
+              builder(constraint.toString.split('.').last, path.addProperty(property), constraintArgs, isOptional)
+            case Ident(constraint) =>
+              builder(constraint.toString.split('.').last, path.addProperty(property), Nil, isOptional)
+            case select@Select(_,_) =>
+              builder(select.toString.split('.').last, path.addProperty(property), Nil, isOptional)
+          }
+        val mapOverApplying: List[Tree] => PartialFunction[Tree,Tree] => Tree = constraints => assertionBuilder =>
+          constraints.map(assertionBuilder).reduce((left, right) => q"""$left.ifTrue($right)""")
+
+        fields.collect {
+          case ValDef(Modifiers(_,_,Apply(Select(New(Ident(TypeName("ConstrainedNumber"))), _), constraints) :: _), TermName(property), AppliedTypeTree(_,Ident(TypeName(objectClassName))::_), _) if Seq("BigDecimal","Int","Long","Double","Float").contains(objectClassName) =>
+            mapOverApplying(constraints)(assertionBuilder(NumberAssertionBuilder)(property)(true))
+
+          case ValDef(Modifiers(_,_,Apply(Select(New(Ident(TypeName("ConstrainedNumber"))), _), constraints) :: _), TermName(property), Ident(TypeName(objectClassName)), _) if Seq("BigDecimal","Int","Long","Double","Float").contains(objectClassName) =>
+            mapOverApplying(constraints)(assertionBuilder(NumberAssertionBuilder)(property)(false))
+
+          case ValDef(Modifiers(_,_,Apply(Select(New(Ident(TypeName("ConstrainedString"))), _), constraints) :: _), TermName(property), AppliedTypeTree(_,Ident(TypeName(objectClassName))::_), _) if "String" == objectClassName =>
+            mapOverApplying(constraints)(assertionBuilder(StringAssertionBuilder)(property)(true))
+
+          case ValDef(Modifiers(_,_,Apply(Select(New(Ident(TypeName("ConstrainedString"))), _), constraints) :: _), TermName(property), Ident(TypeName(objectClassName)), _) if "String" == objectClassName =>
+            mapOverApplying(constraints)(assertionBuilder(StringAssertionBuilder)(property)(false))
+
+          case valDef@ValDef(Modifiers(_,_,Apply(Select(New(Ident(TypeName("ConstrainedType"))), _),_) :: _), TermName(property), Ident(TypeName(_)), _) =>
+            ObjectAssertionBuilder(
+              c.typecheck(valDef.duplicate, c.TYPEmode).asInstanceOf[ValDef]
+                .tpt.symbol.asClass.primaryConstructor.asMethod,
+              path.addProperty(property))
+
+          case ValDef(Modifiers(_,_,Apply(Select(New(Ident(TypeName("ConstrainedIterable"))), _), constraints) :: _),TermName(property),
+          AppliedTypeTree(_, ident),_) if ident.tail.getClass.getName.contains("collection") =>
+
+            IterateeAssertionBuilder(
+              ident.head.asInstanceOf[Ident].name.decodedName.toString,
+              path.addProperty(property),
+              mapOverApplying(constraints)(assertionBuilder(IterableAssertionBuilder)(property)(false)))
+
         }.reduceOption((left, right) => q"""$left.and($right)""")
           .getOrElse(q"""org.nulluncertainty.expression.SuccessfulAssertionExp()""")
       }
@@ -444,57 +519,64 @@ object EnabledAssertionsImpl {
     annottees.map(_.tree).toList match {
       case q"case class $className(..$fields) extends ..$parents { ..$body }" :: _ =>
 
-        val assertionContextAtInstantiation = ValDef(Modifiers(), TermName("input"),
-          Ident(TypeName(className.asInstanceOf[TypeName].decodedName.toString)), EmptyTree)
-        val path = Path(assertionContextAtInstantiation)
-
         val instantiationAssertion: Tree =
-          fields.collect {
+          q"""${InstantiationAssertionBuilder(
+            className.asInstanceOf[TypeName].decodedName.toString,
+            fields.map(_.asInstanceOf[ValDef]))}
+            .evaluate(this).signalIfFailed()"""
 
-            case ValDef(Modifiers(_,_,Apply(Select(New(Ident(TypeName("ConstrainedNumber"))), _), propertyAssertions) :: _), TermName(property), Ident(TypeName(objectClassName)), _) if Seq("BigDecimal","Int","Long","Double","Float").contains(objectClassName) =>
-              propertyAssertions.map {
-                case Apply(Ident(TermName(constraint)), constraintArgs) =>
-                  NumberAssertionBuilder(constraint, path.addProperty(property), constraintArgs)
-                case Ident(TermName(constraint)) =>
-                  NumberAssertionBuilder(constraint, path.addProperty(property), Nil)
-              }.reduce((left, right) => q"""$left.and($right)""")
+        val newBody =
+          body.map {
+            case DefDef(mods, name, tparams, valDefs@(vparamss::_), tpt, rhs) =>
 
-            case ValDef(Modifiers(_,_,Apply(Select(New(Ident(TypeName("ConstrainedString"))), _), propertyAssertions) :: _), TermName(property), Ident(TypeName(objectClassName)), _) if "String" == objectClassName =>
-              propertyAssertions.map {
-                case Apply(Ident(TermName(constraint)), constraintArgs) =>
-                  StringAssertionBuilder(constraint, path.addProperty(property), constraintArgs)
-                case Ident(TermName(constraint)) =>
-                  StringAssertionBuilder(constraint, path.addProperty(property), Nil)
-              }.reduce((left, right) => q"""$left.and($right)""")
+              val methodPreconditions: Seq[Tree] =
+                vparamss collect {
+                  case ValDef(Modifiers(_,_,Apply(Select(New(Ident(TypeName("ConstrainedNumber"))), _), constraints) :: _), TermName(property), Ident(TypeName(objectClassName)), _) if Seq("BigDecimal","Int","Long","Double","Float").contains(objectClassName) =>
 
-            case valDef@ValDef(Modifiers(_,_,Apply(Select(New(Ident(TypeName("ConstrainedType"))), _),_) :: _), TermName(property), Ident(TypeName(_)), _) =>
-              ObjectAssertionBuilder(
-                c.typecheck(valDef.duplicate, c.TYPEmode).asInstanceOf[ValDef]
-                  .tpt.symbol.asClass.primaryConstructor.asMethod,
-                path.addProperty(property))
+                    val path = Path(ValDef(Modifiers(), TermName(property), Ident(TypeName(objectClassName)), EmptyTree))
 
-            case ValDef(Modifiers(_,_,Apply(Select(New(Ident(TypeName("ConstrainedIterable"))), _), propertyAssertions) :: _),TermName(property),
-            AppliedTypeTree(_, ident),_) if ident.tail.getClass.getName.contains("collection") =>
+                    q"""${constraints.map {
+                      case Apply(Ident(TermName(constraint)), constraintArgs) =>
+                        NumberAssertionBuilder(constraint.split('.').last, path, constraintArgs, isOptional = false)
+                      case Ident(TermName(constraint)) =>
+                        NumberAssertionBuilder(constraint.split('.').last, path, Nil, isOptional = false)
+                    }.reduce((left, right) => q"""$left.ifTrue($right)""")}.evaluate(${path.asSelect})"""
 
-              IterateeAssertionBuilder(
-                ident.head.asInstanceOf[Ident].name.decodedName.toString,
-                path.addProperty(property),
-                propertyAssertions.map {
-                  case Apply(Ident(TermName(constraint)), constraintArgs) =>
-                    IterableAssertionBuilder(constraint, path.addProperty(property), constraintArgs)
-                  case Ident(TermName(constraint)) =>
-                    IterableAssertionBuilder(constraint, path.addProperty(property), Nil)
-                  case Apply(TypeApply(Ident(TermName(constraint)), _), mappingFunc::_) =>
-                    IterableAssertionBuilder(constraint, path.addProperty(property), List(mappingFunc))
-                }.reduce((left, right) => q"""$left.ifTrue($right)"""))
+                  // TODO missing partial function for Optional Numbers
 
-          }.reduceOption((left, right) => q"""$left.and($right)""")
-            .getOrElse(q"""org.nulluncertainty.expression.SuccessfulAssertionExp()""")
+                  case ValDef(Modifiers(_,_,Apply(Select(New(Ident(TypeName("ConstrainedString"))), _), constraints) :: _), TermName(property), Ident(TypeName(objectClassName)), _) if "String" == objectClassName =>
+
+                    val path = Path(ValDef(Modifiers(), TermName(property), Ident(TypeName(objectClassName)), EmptyTree))
+
+                    q"""${constraints.map {
+                      case Apply(Ident(TermName(constraint)), constraintArgs) =>
+                        StringAssertionBuilder(constraint.split('.').last, path, constraintArgs, isOptional = false)
+                      case Ident(TermName(constraint)) =>
+                        StringAssertionBuilder(constraint.split('.').last, path, Nil, isOptional = false)
+                    }.reduce((left, right) => q"""$left.ifTrue($right)""")}.evaluate(${path.asSelect})"""
+
+                  // TODO otros optional, objects, listas...
+
+                }
+              val newRhs: c.universe.Tree =
+                q"""
+                  Seq(..$methodPreconditions)
+                  .collect { case org.nulluncertainty.expression.AssertionFailureResult(errorMessages) =>
+                    errorMessages.map(_.asInstanceOf[org.nulluncertainty.macros.EnabledAssertionsImpl.Error])
+                  }
+                  .flatten match {
+                    case Nil => //do nothing
+                    case errors => throw org.nulluncertainty.assertion.AssertionFailureException(errors.toList)
+                  }
+                 $rhs
+                 """
+              DefDef(mods, name, tparams, valDefs, tpt, newRhs)
+          }
 
         c.Expr[Any](q"""
           case class $className ( ..$fields ) extends ..$parents {
-            $instantiationAssertion.evaluate(this).signalIfFailed()
-            ..$body
+            $instantiationAssertion
+            ..$newBody
           }
         """)
 

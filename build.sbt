@@ -32,7 +32,7 @@ lazy val commonSettings = Seq(
   libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.2.3",
   libraryDependencies += "org.scala-lang" % "scala-reflect" % scalaVersion.value,
   libraryDependencies += "org.scalatest" %% "scalatest" % "3.1.1" % Test,
-  libraryDependencies += "nulluncertainty" %% "fluent-assertions" % "2.0.0",
+  libraryDependencies += "nulluncertainty" %% "fluent-assertions" % "2.0.1",
   licenses += ("MIT", url("https://opensource.org/licenses/MIT")),
   coverageExcludedPackages := "<empty>",
 
