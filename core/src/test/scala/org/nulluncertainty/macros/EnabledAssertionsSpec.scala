@@ -920,7 +920,47 @@ class EnabledAssertionsSpec extends WordSpec with Matchers {
         ))),
       expectedErrors =
         Error(property = "lines.1.details.description", violatedConstraint = "NotBlank", message = "lines.1.details.description must not be blank"))
+
+    assertFailure(Try(
+      Order(
+        code = "123",
+        buyer = "   ",
+        lines = List(
+          OrderLine(
+            sku = "   ",
+            quantity = -1,
+            details = ProductDetails(description = "")
+          ),
+          OrderLine(
+            sku = "",
+            quantity = -2,
+            details = ProductDetails(description = "")
+          )
+        ))),
+      expectedErrors =
+        Error(property = "code", violatedConstraint = "StartsWith", message = "123 does not start with prefix code"),
+        Error(property = "buyer", violatedConstraint = "NotBlank", message = "buyer must not be blank"),
+        Error(property = "lines.0.sku", violatedConstraint = "NotBlank", message = "lines.0.sku must not be blank"),
+        Error(property = "lines.0.quantity", violatedConstraint = "GreaterThanOrEqualTo", message = "-1 is not greater than or equal to 1"),
+        Error(property = "lines.0.details.description", violatedConstraint = "NotBlank", message = "lines.0.details.description must not be blank"),
+        Error(property = "lines.1.sku", violatedConstraint = "NotBlank", message = "lines.1.sku must not be blank"),
+        Error(property = "lines.1.quantity", violatedConstraint = "GreaterThanOrEqualTo", message = "-2 is not greater than or equal to 1"),
+        Error(property = "lines.1.details.description", violatedConstraint = "NotBlank", message = "lines.1.details.description must not be blank"))
+
+    assertFailure(Try(
+      Order(
+        code = "123",
+        buyer = "   ",
+        lines = Nil)),
+      expectedErrors =
+      Error(property = "code", violatedConstraint = "StartsWith", message = "123 does not start with prefix code"),
+      Error(property = "buyer", violatedConstraint = "NotBlank", message = "buyer must not be blank"),
+      Error(property = "lines", violatedConstraint = "NonEmpty", message = "lines must not be empty"))
   }
+
+
+
+
 
 
 
