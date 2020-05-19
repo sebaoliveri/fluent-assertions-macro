@@ -1,8 +1,8 @@
-package org.nulluncertainty.macros
+package org.nulluncertainty.assertion
 
-import org.nulluncertainty.macros.IterableConstraints.{AtLeast, AtMost, NonEmpty}
-import org.nulluncertainty.macros.NumberConstraints.{EqualsTo, ExclusiveRange, GreaterThan, GreaterThanOrEqualTo, InclusiveRange, LessThan, LessThanOrEqualTo}
-import org.nulluncertainty.macros.StringConstraints.{Alphabetic, Alphanumeric, Email, EndsWith, LongerThan, NotBlank, StartsWith, Uri}
+import org.nulluncertainty.assertion.IterableConstraints.{AtLeast, AtMost, NonEmpty}
+import org.nulluncertainty.assertion.NumberConstraints.{EqualsTo, ExclusiveRange, GreaterThan, GreaterThanOrEqualTo, InclusiveRange, LessThan, LessThanOrEqualTo}
+import org.nulluncertainty.assertion.StringConstraints.{Alphabetic, Alphanumeric, Email, EndsWith, LongerThan, NotBlank, StartsWith, Uri}
 
 //@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 //GreaterThan and LessThan for Numbers and Maybe Numbers

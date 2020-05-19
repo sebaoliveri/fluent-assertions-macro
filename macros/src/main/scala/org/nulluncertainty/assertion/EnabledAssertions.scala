@@ -1,4 +1,4 @@
-package org.nulluncertainty.macros
+package org.nulluncertainty.assertion
 
 import IterableConstraints.IterableConstraint
 import NumberConstraints._
@@ -65,9 +65,9 @@ class EnabledAssertions() extends StaticAnnotation {
   def macroTransform(annottees: Any*): Any = macro EnabledAssertionsImpl.impl
 }
 
-object EnabledAssertionsImpl {
+case class AssertionError(property: String, violatedConstraint: String, message: String = "")
 
-  case class Error(property: String, violatedConstraint: String, message: String = "")
+object EnabledAssertionsImpl {
 
   def impl(c: whitebox.Context)(annottees: c.Expr[Any]*): c.Expr[Any] = {
     import c.universe._
@@ -82,21 +82,21 @@ object EnabledAssertionsImpl {
         Function(
           List(context),
           segments
-            .foldLeft[Tree](Ident(context.name)) { // TODO "input" was between parenthesis
+            .foldLeft[Tree](Ident(context.name)) {
               (tree, segment) => segment.asSelect(tree)
             })
       def asSelect: c.universe.Tree =
         segments
-          .foldLeft[Tree](Ident(context.name)) { //TODO see what term name is here, otherwise parametrize input
+          .foldLeft[Tree](Ident(context.name)) {
             (tree, segment) => segment.asSelect(tree)
           }
       def asString: Tree =
         segments
           .map(_.asString)
           .reduceOption { (l, r) => q""" $l+"."+$r """}
-          .map { x =>
-            if (evaluatesContext) x
-            else q"""${context.name.decodedName.toString}+"."+$x"""
+          .map { pathAsString =>
+            if (evaluatesContext) pathAsString
+            else q"""${context.name.decodedName.toString}+"."+$pathAsString"""
           }
           .getOrElse(q"""${context.name.decodedName.toString}""")
       def nextIndexName: String =
@@ -125,140 +125,140 @@ object EnabledAssertionsImpl {
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .isEqualTo(${constraintsArgs.head})
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "EqualsTo", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " is not equal to " + ${constraintsArgs.head})})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.assertion.AssertionError(${path.asString}, "EqualsTo", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " is not equal to " + ${constraintsArgs.head})})
           """
         case "EqualsToIgnoringCase" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .isEqualToIgnoringCase(${constraintsArgs.head})
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "EqualsToIgnoringCase", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " is not equal to " + ${constraintsArgs.head})})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.assertion.AssertionError(${path.asString}, "EqualsToIgnoringCase", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " is not equal to " + ${constraintsArgs.head})})
           """
         case "StartsWith" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .startsWith(${constraintsArgs.head})
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "StartsWith", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " does not start with prefix " + ${constraintsArgs.head})})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.assertion.AssertionError(${path.asString}, "StartsWith", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " does not start with prefix " + ${constraintsArgs.head})})
           """
         case "StartsWithIgnoringCase" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .startsWithIgnoringCase(${constraintsArgs.head})
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "StartsWithIgnoringCase", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " does not start with prefix " + ${constraintsArgs.head})})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.assertion.AssertionError(${path.asString}, "StartsWithIgnoringCase", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " does not start with prefix " + ${constraintsArgs.head})})
           """
         case "EndsWith" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .endsWith(${constraintsArgs.head})
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "EndsWith", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " does not end with suffix " + ${constraintsArgs.head})})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.assertion.AssertionError(${path.asString}, "EndsWith", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " does not end with suffix " + ${constraintsArgs.head})})
           """
         case "EndsWithIgnoringCase" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .endsWithIgnoringCase(${constraintsArgs.head})
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "EndsWithIgnoringCase", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " does not end with suffix " + ${constraintsArgs.head})})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.assertion.AssertionError(${path.asString}, "EndsWithIgnoringCase", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " does not end with suffix " + ${constraintsArgs.head})})
           """
         case "Contains" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .contains(${constraintsArgs.head})
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "Contains", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " does not contain " + ${constraintsArgs.head})})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.assertion.AssertionError(${path.asString}, "Contains", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " does not contain " + ${constraintsArgs.head})})
           """
         case "ContainsIgnoringCase" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .containsIgnoringCase(${constraintsArgs.head})
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "ContainsIgnoringCase", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " does not contain " + ${constraintsArgs.head})})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.assertion.AssertionError(${path.asString}, "ContainsIgnoringCase", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " does not contain " + ${constraintsArgs.head})})
           """
         case "Matches" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .matches(${constraintsArgs.head})
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "Matches", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " does not match " + ${constraintsArgs.head})})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.assertion.AssertionError(${path.asString}, "Matches", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " does not match " + ${constraintsArgs.head})})
           """
         case "Email" =>
           q"""
              org.nulluncertainty.assertion.AssertionBuilder
               .assertThat(${path.asFunction})
               .isEmail
-              .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "Email", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " is not a valid email")})
+              .otherwise({input: ${path.contextName} => org.nulluncertainty.assertion.AssertionError(${path.asString}, "Email", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " is not a valid email")})
             """
         case "Uri" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .isUri
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "Uri", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " is not a valid URI")})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.assertion.AssertionError(${path.asString}, "Uri", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " is not a valid URI")})
           """
         case "Alphanumeric" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .isAlphanumeric
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "Alphanumeric", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " is not alphanumeric")})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.assertion.AssertionError(${path.asString}, "Alphanumeric", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " is not alphanumeric")})
           """
         case "Alphabetic" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .isAlphabetic
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "Alphabetic", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " is not alphabetic")})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.assertion.AssertionError(${path.asString}, "Alphabetic", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " is not alphabetic")})
           """
         case "Number" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .isNumber
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "Number", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " is not a number")})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.assertion.AssertionError(${path.asString}, "Number", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " is not a number")})
           """
         case "LengthIs" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .isSameLengthAs(${constraintsArgs.head})
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "LengthIs", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " length is not " + ${constraintsArgs.head})})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.assertion.AssertionError(${path.asString}, "LengthIs", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " length is not " + ${constraintsArgs.head})})
           """
         case "LongerThan" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .isLongerThan(${constraintsArgs.head})
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "LongerThan", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " length is not longer than " + ${constraintsArgs.head})})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.assertion.AssertionError(${path.asString}, "LongerThan", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " length is not longer than " + ${constraintsArgs.head})})
           """
         case "ShorterThan" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .isShorterThan(${constraintsArgs.head})
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "ShorterThan", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " length is not shorter than " + ${constraintsArgs.head})})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.assertion.AssertionError(${path.asString}, "ShorterThan", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " length is not shorter than " + ${constraintsArgs.head})})
           """
         case "LongerThanOrEqualTo" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .isLongerThanOrEqualTo(${constraintsArgs.head})
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "LongerThanOrEqualTo", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " length is not longer than or equal to " + ${constraintsArgs.head})})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.assertion.AssertionError(${path.asString}, "LongerThanOrEqualTo", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " length is not longer than or equal to " + ${constraintsArgs.head})})
           """
         case "ShorterThanOrEqualTo" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .isShorterThanOrEqualTo(${constraintsArgs.head})
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "ShorterThanOrEqualTo", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " length is not shorter than or equal to " + ${constraintsArgs.head})})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.assertion.AssertionError(${path.asString}, "ShorterThanOrEqualTo", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " length is not shorter than or equal to " + ${constraintsArgs.head})})
           """
         case "NotBlank" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .isNotBlank
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "NotBlank", ${path.asString} + " must not be blank")})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.assertion.AssertionError(${path.asString}, "NotBlank", ${path.asString} + " must not be blank")})
           """
       }
     }
@@ -269,49 +269,49 @@ object EnabledAssertionsImpl {
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .isGreaterThan(${constraintArgs.head})
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "GreaterThan", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " is not greater than " + ${constraintArgs.head})})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.assertion.AssertionError(${path.asString}, "GreaterThan", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " is not greater than " + ${constraintArgs.head})})
           """
         case "GreaterThanOrEqualTo" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .isGreaterThanOrEqualTo(${constraintArgs.head})
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "GreaterThanOrEqualTo", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " is not greater than or equal to " + ${constraintArgs.head})})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.assertion.AssertionError(${path.asString}, "GreaterThanOrEqualTo", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " is not greater than or equal to " + ${constraintArgs.head})})
           """
         case "LessThan" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .isLessThan(${constraintArgs.head})
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "LessThan", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " is not less than " + ${constraintArgs.head})})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.assertion.AssertionError(${path.asString}, "LessThan", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " is not less than " + ${constraintArgs.head})})
           """
         case "LessThanOrEqualTo" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .isLessThanOrEqualTo(${constraintArgs.head})
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "LessThanOrEqualTo", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " is not less than or equal to " + ${constraintArgs.head})})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.assertion.AssertionError(${path.asString}, "LessThanOrEqualTo", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " is not less than or equal to " + ${constraintArgs.head})})
           """
         case "EqualsTo" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .isEqualTo(${constraintArgs.head})
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "EqualsTo", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " is not equal to " + ${constraintArgs.head})})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.assertion.AssertionError(${path.asString}, "EqualsTo", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " is not equal to " + ${constraintArgs.head})})
            """
         case "InclusiveRange" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .isInInclusiveRange(${constraintArgs.head}, ${constraintArgs.tail.head})
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "InclusiveRange", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " is not within the inclusive range of " + ${constraintArgs.head}+" to "+${constraintArgs.tail.head} )})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.assertion.AssertionError(${path.asString}, "InclusiveRange", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " is not within the inclusive range of " + ${constraintArgs.head}+" to "+${constraintArgs.tail.head} )})
           """
         case "ExclusiveRange" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .isInExclusiveRange(${constraintArgs.head}, ${constraintArgs.tail.head})
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "ExclusiveRange", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " is not within the exclusive range of " + ${constraintArgs.head}+" to "+${constraintArgs.tail.head} )})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.assertion.AssertionError(${path.asString}, "ExclusiveRange", ${ if(isOptional) path.addProperty("get").asSelect else path.asSelect } + " is not within the exclusive range of " + ${constraintArgs.head}+" to "+${constraintArgs.tail.head} )})
           """
       }
     }
@@ -322,28 +322,28 @@ object EnabledAssertionsImpl {
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .isNotEmpty
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "NonEmpty", ${path.asString} + " must not be empty")})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.assertion.AssertionError(${path.asString}, "NonEmpty", ${path.asString} + " must not be empty")})
           """
         case "AtLeast" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.addProperty("size").asFunction})
             .isGreaterThanOrEqualTo(${constraintArgs.head})
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "AtLeast", ${path.asString} + " must contain at least " + ${constraintArgs.head} + " elements" )})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.assertion.AssertionError(${path.asString}, "AtLeast", ${path.asString} + " must contain at least " + ${constraintArgs.head} + " elements" )})
           """
         case "AtMost" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.addProperty("size").asFunction})
             .isLessThanOrEqualTo(${constraintArgs.head})
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "AtMost", ${path.asString} + " must contain at most " + ${constraintArgs.head} + " elements" )})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.assertion.AssertionError(${path.asString}, "AtMost", ${path.asString} + " must contain at most " + ${constraintArgs.head} + " elements" )})
           """
         case "Contains" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .contains(${constraintArgs.head})
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "Contains", ${path.asString} + " does not contain " + ${constraintArgs.head} )})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.assertion.AssertionError(${path.asString}, "Contains", ${path.asString} + " does not contain " + ${constraintArgs.head} )})
           """
         case "MustBeEqual" =>
           val propertyName = constraintArgs.head match {
@@ -354,21 +354,21 @@ object EnabledAssertionsImpl {
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .mustBeEqual(${constraintArgs.head})
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "MustBeEqual", $propertyName + " must be equal across all elements" )})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.assertion.AssertionError(${path.asString}, "MustBeEqual", $propertyName + " must be equal across all elements" )})
           """
         case "ForAll" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .forAll(${constraintArgs.head})
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "ForAll", "" )})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.assertion.AssertionError(${path.asString}, "ForAll", "" )})
           """
         case "Exists" =>
           q"""
            org.nulluncertainty.assertion.AssertionBuilder
             .assertThat(${path.asFunction})
             .existAny(${constraintArgs.head})
-            .otherwise({input: ${path.contextName} => org.nulluncertainty.macros.EnabledAssertionsImpl.Error(${path.asString}, "Exists", "" )})
+            .otherwise({input: ${path.contextName} => org.nulluncertainty.assertion.AssertionError(${path.asString}, "Exists", "" )})
           """
       }
     }
@@ -567,7 +567,7 @@ object EnabledAssertionsImpl {
             q"""
               Seq(..$methodPreconditions)
               .collect { case org.nulluncertainty.expression.AssertionFailureResult(errorMessages) =>
-                errorMessages.map(_.asInstanceOf[org.nulluncertainty.macros.EnabledAssertionsImpl.Error])
+                errorMessages.map(_.asInstanceOf[org.nulluncertainty.assertion.AssertionError])
               }
               .flatten match {
                 case Nil => //do nothing
