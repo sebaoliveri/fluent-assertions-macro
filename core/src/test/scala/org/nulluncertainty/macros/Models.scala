@@ -1,8 +1,8 @@
 package org.nulluncertainty.macros
 
-import org.nulluncertainty.macros.IterableConstraints.{AtMost, NonEmpty}
+import org.nulluncertainty.macros.IterableConstraints.{AtLeast, AtMost, NonEmpty}
 import org.nulluncertainty.macros.NumberConstraints.{EqualsTo, ExclusiveRange, GreaterThan, GreaterThanOrEqualTo, InclusiveRange, LessThan, LessThanOrEqualTo}
-import org.nulluncertainty.macros.StringConstraints.{Alphabetic, Alphanumeric, Email, EndsWith, NotBlank, StartsWith, Uri}
+import org.nulluncertainty.macros.StringConstraints.{Alphabetic, Alphanumeric, Email, EndsWith, LongerThan, NotBlank, StartsWith, Uri}
 
 //@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 //GreaterThan and LessThan for Numbers and Maybe Numbers
@@ -541,18 +541,21 @@ case class WrappedIterableAtMost2(@ConstrainedIterable(IterableConstraints.AtMos
 
 @EnabledAssertions
 case class Order(@ConstrainedString(StartsWith("code")) code: String,
-                 @ConstrainedString(NotBlank) buyer: String,
-                 @ConstrainedIterable(NonEmpty) lines: List[OrderLine])
+                 @ConstrainedString(LongerThan(3)) buyer: Option[String],
+                 @ConstrainedType details: OrderDetails,
+                 @ConstrainedIterable(NonEmpty) lines: List[OrderLine]) {
+  def change(@ConstrainedString(NotBlank) buyer: Option[String],
+             @ConstrainedString(StartsWith("code")) code: String): Order =
+    copy(code = code, buyer = buyer)
+
+  def changeDetails(@ConstrainedType newDetails: OrderDetails): Order =
+    copy(details = newDetails)
+
+  def changeLines(@ConstrainedIterable(NonEmpty) newLines: List[OrderLine]): Order =
+    copy(lines = newLines)
+}
+case class OrderDetails(@ConstrainedString(NotBlank) firstDetail: String, @ConstrainedString(NotBlank) secondDetail: Option[String])
 case class OrderLine(@ConstrainedString(NotBlank) sku: String,
                      @ConstrainedNumber(GreaterThanOrEqualTo(1)) quantity: Int,
                      @ConstrainedType details: ProductDetails)
 case class ProductDetails(@ConstrainedString(NotBlank) description: String)
-
-@EnabledAssertions
-case class Trainer(name: String, age: Int) {
-
-  def modify(@ConstrainedString(NotBlank) name: String,
-             @ConstrainedNumber(GreaterThan(18)) age: Int): Trainer = {
-    copy(name = name, age = age)
-  }
-}

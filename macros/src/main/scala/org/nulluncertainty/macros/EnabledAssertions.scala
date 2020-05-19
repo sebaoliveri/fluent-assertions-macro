@@ -72,9 +72,8 @@ object EnabledAssertionsImpl {
   def impl(c: whitebox.Context)(annottees: c.Expr[Any]*): c.Expr[Any] = {
     import c.universe._
 
-    case class Path(context: ValDef, segments: Seq[PathSegment] = Nil) {
-      def contextName: Ident =
-        context.tpt.asInstanceOf[Ident]
+    case class Path(context: ValDef, segments: Seq[PathSegment] = Nil, evaluatesContext: Boolean = true) {
+      def contextName = context.tpt
       def addProperty(name: String): Path =
         copy(segments = segments :+ PropertySegment(name))
       def addIndex(name: String): Path =
@@ -95,6 +94,10 @@ object EnabledAssertionsImpl {
         segments
           .map(_.asString)
           .reduceOption { (l, r) => q""" $l+"."+$r """}
+          .map { x =>
+            if (evaluatesContext) x
+            else q"""${context.name.decodedName.toString}+"."+$x"""
+          }
           .getOrElse(q"""${context.name.decodedName.toString}""")
       def nextIndexName: String =
         s"index${segments.count(_.isInstanceOf[IndexSegment])}"
@@ -418,7 +421,9 @@ object EnabledAssertionsImpl {
             builder(constraint.toString.split('.').last, propertyPath, Nil, isOptional)
           }
       val mapOverApplying: List[Tree] => PartialFunction[Tree,Tree] => Tree = constraints => assertionBuilder =>
-        constraints.map(assertionBuilder).reduce((left, right) => q"""$left.ifTrue($right)""")
+        constraints.map(assertionBuilder)
+          .reduceOption((left, right) => q"""$left.ifTrue($right)""")
+          .getOrElse(q"""org.nulluncertainty.expression.SuccessfulAssertionExp()""")
 
       override def apply(constructor: MethodSymbol, path: Path): c.universe.Tree = {
         constructor.paramLists.flatten.map { param =>
@@ -465,6 +470,21 @@ object EnabledAssertionsImpl {
           .getOrElse(q"""org.nulluncertainty.expression.SuccessfulAssertionExp()""")
       }
     }
+
+    val assertionBuilder: ((String, Path, List[Tree], Boolean) => Tree) => Path => Boolean => PartialFunction[Tree,Tree] =
+      builder => path => isOptional => {
+        case Apply(constraint, constraintArgs) =>
+          builder(constraint.toString.split('.').last, path, constraintArgs, isOptional)
+        case Ident(constraint) =>
+          builder(constraint.toString.split('.').last, path, Nil, isOptional)
+        case select@Select(_,_) =>
+          builder(select.toString.split('.').last, path, Nil, isOptional)
+      }
+    val mapOverApplying: List[Tree] => PartialFunction[Tree,Tree] => Tree = constraints => assertionBuilder =>
+      constraints.map(assertionBuilder)
+        .reduceOption((left, right) => q"""$left.ifTrue($right)""")
+        .getOrElse(q"""org.nulluncertainty.expression.SuccessfulAssertionExp()""")
+
     object InstantiationAssertionBuilder extends((String,Seq[ValDef]) => Tree) {
 
       override def apply(context: String, fields: Seq[ValDef]): c.universe.Tree = {
@@ -472,30 +492,18 @@ object EnabledAssertionsImpl {
           ValDef(Modifiers(), TermName("input"), Ident(TypeName(context)), EmptyTree)
         val path = Path(assertionContextAtInstantiation)
 
-        val assertionBuilder: ((String, Path, List[Tree], Boolean) => Tree) => String => Boolean => PartialFunction[Tree,Tree] =
-          builder => property => isOptional => {
-            case Apply(constraint, constraintArgs) =>
-              builder(constraint.toString.split('.').last, path.addProperty(property), constraintArgs, isOptional)
-            case Ident(constraint) =>
-              builder(constraint.toString.split('.').last, path.addProperty(property), Nil, isOptional)
-            case select@Select(_,_) =>
-              builder(select.toString.split('.').last, path.addProperty(property), Nil, isOptional)
-          }
-        val mapOverApplying: List[Tree] => PartialFunction[Tree,Tree] => Tree = constraints => assertionBuilder =>
-          constraints.map(assertionBuilder).reduce((left, right) => q"""$left.ifTrue($right)""")
-
         fields.collect {
-          case ValDef(Modifiers(_,_,Apply(Select(New(Ident(TypeName("ConstrainedNumber"))), _), constraints) :: _), TermName(property), AppliedTypeTree(_,Ident(TypeName(objectClassName))::_), _) if Seq("BigDecimal","Int","Long","Double","Float").contains(objectClassName) =>
-            mapOverApplying(constraints)(assertionBuilder(NumberAssertionBuilder)(property)(true))
+          case ValDef(Modifiers(_,_,Apply(Select(New(Ident(TypeName("ConstrainedNumber"))), _), constraints) :: _), TermName(property), objectClassName, _) if Seq("Option[BigDecimal]","Option[Int]","Option[Long]","Option[Double]","Option[Float]").contains(objectClassName.toString) =>
+            mapOverApplying(constraints)(assertionBuilder(NumberAssertionBuilder)(path.addProperty(property))(true))
 
-          case ValDef(Modifiers(_,_,Apply(Select(New(Ident(TypeName("ConstrainedNumber"))), _), constraints) :: _), TermName(property), Ident(TypeName(objectClassName)), _) if Seq("BigDecimal","Int","Long","Double","Float").contains(objectClassName) =>
-            mapOverApplying(constraints)(assertionBuilder(NumberAssertionBuilder)(property)(false))
+          case ValDef(Modifiers(_,_,Apply(Select(New(Ident(TypeName("ConstrainedNumber"))), _), constraints) :: _), TermName(property), objectClassName, _) if Seq("BigDecimal","Int","Long","Double","Float").contains(objectClassName.toString) =>
+            mapOverApplying(constraints)(assertionBuilder(NumberAssertionBuilder)(path.addProperty(property))(false))
 
-          case ValDef(Modifiers(_,_,Apply(Select(New(Ident(TypeName("ConstrainedString"))), _), constraints) :: _), TermName(property), AppliedTypeTree(_,Ident(TypeName(objectClassName))::_), _) if "String" == objectClassName =>
-            mapOverApplying(constraints)(assertionBuilder(StringAssertionBuilder)(property)(true))
+          case ValDef(Modifiers(_,_,Apply(Select(New(Ident(TypeName("ConstrainedString"))), _), constraints) :: _), TermName(property), objectClassName, _) if "Option[String]" == objectClassName.toString() =>
+            mapOverApplying(constraints)(assertionBuilder(StringAssertionBuilder)(path.addProperty(property))(true))
 
-          case ValDef(Modifiers(_,_,Apply(Select(New(Ident(TypeName("ConstrainedString"))), _), constraints) :: _), TermName(property), Ident(TypeName(objectClassName)), _) if "String" == objectClassName =>
-            mapOverApplying(constraints)(assertionBuilder(StringAssertionBuilder)(property)(false))
+          case ValDef(Modifiers(_,_,Apply(Select(New(Ident(TypeName("ConstrainedString"))), _), constraints) :: _), TermName(property), objectClassName, _) if "String" == objectClassName.toString() =>
+            mapOverApplying(constraints)(assertionBuilder(StringAssertionBuilder)(path.addProperty(property))(false))
 
           case valDef@ValDef(Modifiers(_,_,Apply(Select(New(Ident(TypeName("ConstrainedType"))), _),_) :: _), TermName(property), Ident(TypeName(_)), _) =>
             ObjectAssertionBuilder(
@@ -509,10 +517,65 @@ object EnabledAssertionsImpl {
             IterateeAssertionBuilder(
               ident.head.asInstanceOf[Ident].name.decodedName.toString,
               path.addProperty(property),
-              mapOverApplying(constraints)(assertionBuilder(IterableAssertionBuilder)(property)(false)))
+              mapOverApplying(constraints)(assertionBuilder(IterableAssertionBuilder)(path.addProperty(property))(false)))
 
         }.reduceOption((left, right) => q"""$left.and($right)""")
           .getOrElse(q"""org.nulluncertainty.expression.SuccessfulAssertionExp()""")
+      }
+    }
+
+    object BodyWithPreconditionAssertions extends(Seq[Trees#Tree] => Seq[Tree]) {
+      override def apply(body: Seq[Trees#Tree]): Seq[c.universe.Tree] = {
+        body.map {
+          case DefDef(mods, name, tparams, valDefs@(vparamss::_), tpt, rhs) =>
+
+          val methodPreconditions: Seq[Tree] = vparamss collect {
+
+            case ValDef(Modifiers(_,_,Apply(Select(New(Ident(TypeName("ConstrainedNumber"))), _), constraints) :: _), TermName(property), objectClassName, _) if Seq("Option[BigDecimal]","Option[Int]","Option[Long]","Option[Double]","Option[Float]").contains(objectClassName.toString()) =>
+              val path = Path(ValDef(Modifiers(), TermName(property), objectClassName, EmptyTree), evaluatesContext = false)
+              q"""${mapOverApplying(constraints)(assertionBuilder(NumberAssertionBuilder)(path)(true))}.evaluate(${path.asSelect})"""
+
+            case ValDef(Modifiers(_,_,Apply(Select(New(Ident(TypeName("ConstrainedNumber"))), _), constraints) :: _), TermName(property), objectClassName, _) if Seq("BigDecimal","Int","Long","Double","Float").contains(objectClassName.toString()) =>
+              val path = Path(ValDef(Modifiers(), TermName(property), objectClassName, EmptyTree), evaluatesContext = false)
+              q"""${mapOverApplying(constraints)(assertionBuilder(NumberAssertionBuilder)(path)(false))}.evaluate(${path.asSelect})"""
+
+            case ValDef(Modifiers(_,_,Apply(Select(New(Ident(TypeName("ConstrainedString"))), _), constraints) :: _), TermName(property), objectClassName, _) if "Option[String]" == objectClassName.toString() =>
+              val path = Path(ValDef(Modifiers(), TermName(property), objectClassName, EmptyTree), evaluatesContext = false)
+              q"""${mapOverApplying(constraints)(assertionBuilder(StringAssertionBuilder)(path)(true))}.evaluate(${path.asSelect})"""
+
+            case ValDef(Modifiers(_,_,Apply(Select(New(Ident(TypeName("ConstrainedString"))), _), constraints) :: _), TermName(property), objectClassName, _) if "String" == objectClassName.toString() =>
+              val path = Path(ValDef(Modifiers(), TermName(property), objectClassName, EmptyTree), evaluatesContext = false)
+              q"""${mapOverApplying(constraints)(assertionBuilder(StringAssertionBuilder)(path)(false))}.evaluate(${path.asSelect})"""
+
+            case valDef@ValDef(Modifiers(_,_,Apply(Select(New(Ident(TypeName("ConstrainedType"))), _),_) :: _), TermName(property), objectClassName, _) =>
+              val path = Path(ValDef(Modifiers(), TermName(property), objectClassName, EmptyTree), evaluatesContext = false)
+              q"""${ObjectAssertionBuilder(
+                c.typecheck(valDef.duplicate, c.TYPEmode).asInstanceOf[ValDef]
+                  .tpt.symbol.asClass.primaryConstructor.asMethod,
+                path)}.evaluate(${path.asSelect})"""
+
+            case ValDef(Modifiers(_,_,Apply(Select(New(Ident(TypeName("ConstrainedIterable"))), _), constraints) :: _),TermName(property),
+                objectClassName@AppliedTypeTree(_, ident),_) =>
+              val path = Path(ValDef(Modifiers(), TermName(property), objectClassName, EmptyTree), evaluatesContext = false)
+              q"""${IterateeAssertionBuilder(
+                ident.head.asInstanceOf[Ident].name.decodedName.toString,
+                path,
+                mapOverApplying(constraints)(assertionBuilder(IterableAssertionBuilder)(path)(false)))}.evaluate(${path.asSelect})"""
+          }
+
+          DefDef(mods, name, tparams, valDefs, tpt,
+            q"""
+              Seq(..$methodPreconditions)
+              .collect { case org.nulluncertainty.expression.AssertionFailureResult(errorMessages) =>
+                errorMessages.map(_.asInstanceOf[org.nulluncertainty.macros.EnabledAssertionsImpl.Error])
+              }
+              .flatten match {
+                case Nil => //do nothing
+                case errors => throw org.nulluncertainty.assertion.AssertionFailureException(errors.toList)
+              }
+             $rhs
+             """)
+        }
       }
     }
 
@@ -525,58 +588,13 @@ object EnabledAssertionsImpl {
             fields.map(_.asInstanceOf[ValDef]))}
             .evaluate(this).signalIfFailed()"""
 
-        val newBody =
-          body.map {
-            case DefDef(mods, name, tparams, valDefs@(vparamss::_), tpt, rhs) =>
-
-              val methodPreconditions: Seq[Tree] =
-                vparamss collect {
-                  case ValDef(Modifiers(_,_,Apply(Select(New(Ident(TypeName("ConstrainedNumber"))), _), constraints) :: _), TermName(property), Ident(TypeName(objectClassName)), _) if Seq("BigDecimal","Int","Long","Double","Float").contains(objectClassName) =>
-
-                    val path = Path(ValDef(Modifiers(), TermName(property), Ident(TypeName(objectClassName)), EmptyTree))
-
-                    q"""${constraints.map {
-                      case Apply(Ident(TermName(constraint)), constraintArgs) =>
-                        NumberAssertionBuilder(constraint.split('.').last, path, constraintArgs, isOptional = false)
-                      case Ident(TermName(constraint)) =>
-                        NumberAssertionBuilder(constraint.split('.').last, path, Nil, isOptional = false)
-                    }.reduce((left, right) => q"""$left.ifTrue($right)""")}.evaluate(${path.asSelect})"""
-
-                  // TODO missing partial function for Optional Numbers
-
-                  case ValDef(Modifiers(_,_,Apply(Select(New(Ident(TypeName("ConstrainedString"))), _), constraints) :: _), TermName(property), Ident(TypeName(objectClassName)), _) if "String" == objectClassName =>
-
-                    val path = Path(ValDef(Modifiers(), TermName(property), Ident(TypeName(objectClassName)), EmptyTree))
-
-                    q"""${constraints.map {
-                      case Apply(Ident(TermName(constraint)), constraintArgs) =>
-                        StringAssertionBuilder(constraint.split('.').last, path, constraintArgs, isOptional = false)
-                      case Ident(TermName(constraint)) =>
-                        StringAssertionBuilder(constraint.split('.').last, path, Nil, isOptional = false)
-                    }.reduce((left, right) => q"""$left.ifTrue($right)""")}.evaluate(${path.asSelect})"""
-
-                  // TODO otros optional, objects, listas...
-
-                }
-              val newRhs: c.universe.Tree =
-                q"""
-                  Seq(..$methodPreconditions)
-                  .collect { case org.nulluncertainty.expression.AssertionFailureResult(errorMessages) =>
-                    errorMessages.map(_.asInstanceOf[org.nulluncertainty.macros.EnabledAssertionsImpl.Error])
-                  }
-                  .flatten match {
-                    case Nil => //do nothing
-                    case errors => throw org.nulluncertainty.assertion.AssertionFailureException(errors.toList)
-                  }
-                 $rhs
-                 """
-              DefDef(mods, name, tparams, valDefs, tpt, newRhs)
-          }
+        val bodyWithPreconditionAssertions =
+          BodyWithPreconditionAssertions(body)
 
         c.Expr[Any](q"""
           case class $className ( ..$fields ) extends ..$parents {
             $instantiationAssertion
-            ..$newBody
+            ..$bodyWithPreconditionAssertions
           }
         """)
 

@@ -891,7 +891,8 @@ class EnabledAssertionsSpec extends WordSpec with Matchers {
     assertSuccess(Try(
       Order(
         code = "code_123",
-        buyer = "Sebastian",
+        buyer = Some("Sebastian"),
+        details = OrderDetails("first", None),
         lines = List(
           OrderLine(
             sku = "abc",
@@ -905,7 +906,8 @@ class EnabledAssertionsSpec extends WordSpec with Matchers {
     assertFailure(Try(
       Order(
         code = "code_123",
-        buyer = "Sebastian",
+        buyer = Some("Sebastian"),
+        details = OrderDetails("first", None),
         lines = List(
           OrderLine(
             sku = "abc",
@@ -924,7 +926,8 @@ class EnabledAssertionsSpec extends WordSpec with Matchers {
     assertFailure(Try(
       Order(
         code = "123",
-        buyer = "   ",
+        buyer = Some("se"),
+        details = OrderDetails("first", None),
         lines = List(
           OrderLine(
             sku = "   ",
@@ -939,7 +942,7 @@ class EnabledAssertionsSpec extends WordSpec with Matchers {
         ))),
       expectedErrors =
         Error(property = "code", violatedConstraint = "StartsWith", message = "123 does not start with prefix code"),
-        Error(property = "buyer", violatedConstraint = "NotBlank", message = "buyer must not be blank"),
+        Error(property = "buyer", violatedConstraint = "LongerThan", message = "se length is not longer than 3"),
         Error(property = "lines.0.sku", violatedConstraint = "NotBlank", message = "lines.0.sku must not be blank"),
         Error(property = "lines.0.quantity", violatedConstraint = "GreaterThanOrEqualTo", message = "-1 is not greater than or equal to 1"),
         Error(property = "lines.0.details.description", violatedConstraint = "NotBlank", message = "lines.0.details.description must not be blank"),
@@ -950,27 +953,69 @@ class EnabledAssertionsSpec extends WordSpec with Matchers {
     assertFailure(Try(
       Order(
         code = "123",
-        buyer = "   ",
+        buyer = Some("se"),
+        details = OrderDetails("first", None),
         lines = Nil)),
       expectedErrors =
       Error(property = "code", violatedConstraint = "StartsWith", message = "123 does not start with prefix code"),
-      Error(property = "buyer", violatedConstraint = "NotBlank", message = "buyer must not be blank"),
+      Error(property = "buyer", violatedConstraint = "LongerThan", message = "se length is not longer than 3"),
       Error(property = "lines", violatedConstraint = "NonEmpty", message = "lines must not be empty"))
   }
 
+  "MethodPrecondition_" in {
+    assertSuccess(Try(
+      Order(code = "code_123", buyer = Some("Sebastian"), details = OrderDetails("first", None),
+        lines = List(OrderLine(sku = "abc", quantity = 1, details = ProductDetails(description = "cool"))))
+          .change(buyer = Some("sebas"), code = "code_123")))
 
+    assertFailure(Try(
+      Order(code = "code_123", buyer = Some("Sebastian"), details = OrderDetails("first", None),
+        lines = List(OrderLine(sku = "abc", quantity = 1, details = ProductDetails(description = "cool"))))
+        .change(buyer = None, code = "xxx_123")),
+      Error(property = "code", violatedConstraint = "StartsWith", message = "xxx_123 does not start with prefix code"))
 
+    assertFailure(Try(
+      Order(code = "code_123", buyer = Some("Sebastian"), details = OrderDetails("first", None),
+        lines = List(OrderLine(sku = "abc", quantity = 1, details = ProductDetails(description = "cool"))))
+        .change(buyer = Some(""), code = "xxx_123")),
+      Error(property = "buyer", violatedConstraint = "NotBlank", message = "buyer must not be blank"),
+      Error(property = "code", violatedConstraint = "StartsWith", message = "xxx_123 does not start with prefix code"))
 
+    assertSuccess(Try(
+      Order(code = "code_123", buyer = Some("Sebastian"), details = OrderDetails("first", None),
+        lines = List(OrderLine(sku = "abc", quantity = 1, details = ProductDetails(description = "cool"))))
+        .changeDetails(newDetails = OrderDetails(firstDetail = "first", secondDetail = Some("second")))))
 
+    assertFailure(Try(
+      Order(code = "code_123", buyer = Some("Sebastian"), details = OrderDetails("first", None),
+        lines = List(OrderLine(sku = "abc", quantity = 1, details = ProductDetails(description = "cool"))))
+        .changeDetails(newDetails = OrderDetails(firstDetail = "", secondDetail = None))),
+      Error(property = "newDetails.firstDetail", violatedConstraint = "NotBlank", "newDetails.firstDetail must not be blank"))
 
+    assertFailure(Try(
+      Order(code = "code_123", buyer = Some("Sebastian"), details = OrderDetails("first", None),
+        lines = List(OrderLine(sku = "abc", quantity = 1, details = ProductDetails(description = "cool"))))
+        .changeDetails(newDetails = OrderDetails(firstDetail = "", secondDetail = Some("")))),
+      Error(property = "newDetails.firstDetail", violatedConstraint = "NotBlank", "newDetails.firstDetail must not be blank"),
+      Error(property = "newDetails.secondDetail", violatedConstraint = "NotBlank", "newDetails.secondDetail must not be blank"))
 
+    assertFailure(Try(
+      Order(code = "code_123", buyer = Some("Sebastian"), details = OrderDetails("first", None),
+        lines = List(OrderLine(sku = "abc", quantity = 1, details = ProductDetails(description = "cool"))))
+        .changeLines(List(
+          OrderLine(sku = "", quantity = -1, details = ProductDetails("")),OrderLine(sku = "", quantity = -2, details = ProductDetails(""))
+        ))),
+      Error(property = "newLines.0.sku", violatedConstraint = "NotBlank", "newLines.0.sku must not be blank"),
+      Error(property = "newLines.0.quantity", violatedConstraint = "GreaterThanOrEqualTo", "-1 is not greater than or equal to 1"),
+      Error(property = "newLines.0.details.description", violatedConstraint = "NotBlank", "newLines.0.details.description must not be blank"),
+      Error(property = "newLines.1.sku", violatedConstraint = "NotBlank", "newLines.1.sku must not be blank"),
+      Error(property = "newLines.1.quantity", violatedConstraint = "GreaterThanOrEqualTo", "-2 is not greater than or equal to 1"),
+      Error(property = "newLines.1.details.description", violatedConstraint = "NotBlank", "newLines.1.details.description must not be blank"))
 
-
-  "defdef" in {
-    Try(Trainer(name = "cucho", age = 10).modify("  ", 100)) match {
-      case Success(_) => println("PUTO")
-      case Failure(_@AssertionFailureException(errors)) => errors.foreach(println)
-    }
+    assertFailure(Try(
+      Order(code = "code_123", buyer = Some("Sebastian"), details = OrderDetails("first", None),
+        lines = List(OrderLine(sku = "abc", quantity = 1, details = ProductDetails(description = "cool"))))
+        .changeLines(Nil)),
+      Error(property = "newLines", violatedConstraint = "NonEmpty", "newLines must not be empty"))
   }
-
 }
