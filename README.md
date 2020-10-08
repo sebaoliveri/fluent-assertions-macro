@@ -62,7 +62,7 @@ It might become kind of verbose.
 It also could be hard to reason about when requires lots of conditional assertions. Might become a sea of IF-ELSE statements losing legibility and making it developer dependent to maintain.
 And it fails fast, meaning that it fails when the first encountered assertion fails. Won't allow the client of this code to report all error messages for the failing assertions.
 
-A second solution to preserve invariants (and solving the issues I mentioned above) would be to use '' fluent assertions '' and lighten the work of the developer when describing and running assertions.
+A second solution to preserve invariants (and solving the issues I mentioned above) would be to use [fluent assertions](https://github.com/sebaoliveri/fluent-assertions) and lighten the work of the developer when describing and running assertions.
 
 _Now, the third solution is the one that provides this lib and the idea is to use meta-programming to enhance a domain model with fluent-assertions._
 
