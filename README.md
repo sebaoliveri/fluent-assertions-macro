@@ -79,6 +79,12 @@ This lib extends your code with fluent assertions:
 
 ```scala
 
+def assertFailure(aTry: Try[_], expectedErrors: AssertionError*): Unit =
+    aTry match {
+      case Success(_) => fail()
+      case Failure(_@AssertionFailureException(errors)) => errors should be(expectedErrors)
+    }
+
 assertFailure(
   PurchaseOrder(buyer = " ", Nil),
    expectedErrors =
