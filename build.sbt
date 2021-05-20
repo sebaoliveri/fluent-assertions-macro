@@ -21,18 +21,17 @@ lazy val commonSettings = Seq(
     "-language:postfixOps"
   ),
 
-  resolvers += Resolver.bintrayRepo("sebasoliveri", "maven"),
+  resolvers += "Fluent Assertions Releases" at "https://chalten.jfrog.io/artifactory/releases",
+
   publishTo := Some(
-    "bintray" at
-      "https://api.bintray.com/maven/fluent-assertions/" +
-        "releases/fluent-assertions-macro/;publish=1"),
+    "chalten" at
+      "https://chalten.jfrog.io/artifactory/releases"),
   credentials += Credentials(Path.userHome / ".sbt" / ".credentials"),
 
-  resolvers += Resolver.bintrayRepo("fluent-assertions", "releases"),
   libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.2.3",
   libraryDependencies += "org.scala-lang" % "scala-reflect" % scalaVersion.value,
   libraryDependencies += "org.scalatest" %% "scalatest" % "3.1.1" % Test,
-  libraryDependencies += "nulluncertainty" %% "fluent-assertions" % "2.0.1",
+  libraryDependencies += "nulluncertainty" %% "fluent-assertions" % "2.0.2",
   licenses += ("MIT", url("https://opensource.org/licenses/MIT")),
   coverageExcludedPackages := "<empty>",
 
